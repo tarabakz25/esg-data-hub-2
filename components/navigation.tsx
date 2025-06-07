@@ -1,9 +1,18 @@
 "use client"
 
-import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { cn } from "@/lib/utils"
+import { useAuth } from "@/hooks/use-auth"
 import { Button } from "@/components/ui/button"
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuSeparator, 
+  DropdownMenuTrigger 
+} from "@/components/ui/dropdown-menu"
+import { LogOut, User as UserIcon, Upload, BarChart3 } from "lucide-react"
+import Link from "next/link"
+import { useRouter, usePathname } from "next/navigation"
+import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import {
   NavigationMenu,
@@ -14,9 +23,6 @@ import {
   NavigationMenuTrigger,
 } from "@/components/ui/navigation-menu"
 import { 
-  BarChart3, 
-  Upload, 
-  Database, 
   AlertTriangle, 
   FileText, 
   Settings,
@@ -39,7 +45,7 @@ const navigation = [
   {
     name: "データ管理",
     href: "/data",
-    icon: Database,
+    icon: BarChart3,
     description: "正規化済みESGデータの管理"
   },
   {
@@ -63,7 +69,19 @@ const navigation = [
 ]
 
 export function Navigation() {
+  const { user, isLoading, signOut } = useAuth()
+  const router = useRouter()
   const pathname = usePathname()
+
+  const handleSignOut = async () => {
+    await signOut()
+    router.push("/")
+    router.refresh()
+  }
+
+  const getUserInitials = (email: string) => {
+    return email.substring(0, 2).toUpperCase()
+  }
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-5">
@@ -140,10 +158,43 @@ export function Navigation() {
           </div>
           
           <nav className="flex items-center space-x-2">
-            <Button variant="ghost" size="sm">
-              <Settings className="h-4 w-4" />
-              <span className="sr-only">設定</span>
-            </Button>
+            {user && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="relative h-8 w-8 rounded-full bg-blue-600 text-white hover:bg-blue-700">
+                    {getUserInitials(user.email || "")}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-56" align="end" forceMount>
+                  <div className="flex items-center justify-start gap-2 p-2">
+                    <div className="flex flex-col space-y-1 leading-none">
+                      <p className="font-medium">{user.email}</p>
+                      <p className="w-[200px] truncate text-sm text-muted-foreground">
+                        ログイン中
+                      </p>
+                    </div>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild className="md:hidden">
+                    <Link href="/upload" className="flex items-center">
+                      <Upload className="mr-2 h-4 w-4" />
+                      <span>アップロード</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="md:hidden">
+                    <Link href="/dashboard" className="flex items-center">
+                      <BarChart3 className="mr-2 h-4 w-4" />
+                      <span>ダッシュボード</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="md:hidden" />
+                  <DropdownMenuItem onClick={handleSignOut}>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>ログアウト</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </nav>
         </div>
       </div>

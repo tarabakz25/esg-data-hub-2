@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback } from "react"
+import { useAuth } from "@/hooks/use-auth"
 import { createClient } from "@/lib/supabase/client"
 import { Navigation } from "@/components/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -36,21 +37,9 @@ export default function UploadPage() {
   const [dataSourceId, setDataSourceId] = useState("")
   const [dragActive, setDragActive] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
-  const [user, setUser] = useState<any>(null)
-  const [isLoading, setIsLoading] = useState(true)
   
+  const { user, isLoading } = useAuth()
   const supabase = createClient()
-
-  useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setUser(user)
-      setIsLoading(false)
-      console.log('Current user:', user)
-    }
-    
-    getUser()
-  }, [])
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault()
