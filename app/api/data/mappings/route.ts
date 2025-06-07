@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     
     // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -11,8 +11,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Fetch mapping rules with KPI details
-    const { data: mappings, error } = await supabase
+    // Fetch mapping rules and KPIs separately to avoid relationship issues
+    const { data: mappingRules, error: mappingError } = await supabase
       .from('mapping_rules')
       .select(`
         id,
@@ -20,19 +20,37 @@ export async function GET(request: NextRequest) {
         confidence,
         validated,
         created_at,
-        kpis!inner(
-          id,
-          name,
-          unit,
-          category
-        )
+        kpi_id
       `)
       .order('created_at', { ascending: false })
 
-    if (error) {
-      console.error('Error fetching mappings:', error)
-      return NextResponse.json({ error: 'Failed to fetch mappings' }, { status: 500 })
+    if (mappingError) {
+      console.error('Error fetching mapping rules:', mappingError)
+      return NextResponse.json({ error: 'Failed to fetch mapping rules' }, { status: 500 })
     }
+
+    // Get unique KPI IDs
+    const kpiIds = [...new Set(mappingRules?.map(mapping => mapping.kpi_id) || [])]
+    
+    // Fetch KPIs separately
+    const { data: kpis, error: kpiError } = await supabase
+      .from('kpis')
+      .select('id, name, unit, category')
+      .in('id', kpiIds)
+
+    if (kpiError) {
+      console.error('Error fetching KPIs:', kpiError)
+      return NextResponse.json({ error: 'Failed to fetch KPIs' }, { status: 500 })
+    }
+
+    // Create a KPI lookup map
+    const kpiMap = new Map(kpis?.map(kpi => [kpi.id, kpi]) || [])
+
+    // Combine the data
+    const mappings = mappingRules?.map(mapping => ({
+      ...mapping,
+      kpis: kpiMap.get(mapping.kpi_id)
+    })).filter(mapping => mapping.kpis) // Only include mappings with valid KPIs
 
     // Transform data for frontend
     const transformedData = mappings.map((mapping) => ({
@@ -54,7 +72,7 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     
     // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()

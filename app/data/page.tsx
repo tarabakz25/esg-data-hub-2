@@ -1,6 +1,8 @@
 "use client"
 
 import { useState } from "react"
+import { useAuth } from "@/hooks/use-auth"
+import { useDataSources, useRawRecords, useKPIMappings, useDataStats } from "@/hooks/use-data-management"
 import { Navigation } from "@/components/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -11,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { 
   Database, 
   Upload, 
@@ -23,29 +26,9 @@ import {
   RefreshCw,
   TrendingUp,
   FileText,
-  Zap
+  Zap,
+  Loader2
 } from "lucide-react"
-
-// Mock data - in real app this would come from API
-const mockDataSources = [
-  { id: "1", name: "人事部門", type: "csv", department: "人事", records: 1250, lastUpdate: "2024-01-15" },
-  { id: "2", name: "財務API", type: "api", department: "財務", records: 890, lastUpdate: "2024-01-15" },
-  { id: "3", name: "環境データ", type: "webhook", department: "環境", records: 2100, lastUpdate: "2024-01-14" },
-]
-
-const mockRawRecords = [
-  { id: "1", source: "人事部門", filename: "employee_data_2024.csv", status: "processed", records: 1250, uploadTime: "2024-01-15 10:30" },
-  { id: "2", source: "財務API", filename: "financial_metrics.json", status: "processing", records: 890, uploadTime: "2024-01-15 09:15" },
-  { id: "3", source: "環境データ", filename: "carbon_emissions.xlsx", status: "pending", records: 2100, uploadTime: "2024-01-14 16:45" },
-  { id: "4", source: "人事部門", filename: "diversity_report.csv", status: "error", records: 0, uploadTime: "2024-01-14 14:20" },
-]
-
-const mockKPIMappings = [
-  { id: "1", column: "CO2_emissions", kpi: "温室効果ガス排出量", confidence: 95, status: "validated", unit: "tCO2e" },
-  { id: "2", column: "employee_count", kpi: "従業員数", confidence: 98, status: "validated", unit: "人" },
-  { id: "3", column: "energy_usage", kpi: "エネルギー消費量", confidence: 87, status: "pending", unit: "MWh" },
-  { id: "4", column: "water_consumption", kpi: "水使用量", confidence: 92, status: "validated", unit: "m³" },
-]
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -63,9 +46,82 @@ const getStatusBadge = (status: string) => {
   }
 }
 
+const getAlertIcon = (type: string) => {
+  switch (type) {
+    case "error":
+      return <AlertCircle className="h-5 w-5 text-red-500" />
+    case "warning":
+      return <AlertCircle className="h-5 w-5 text-yellow-500" />
+    default:
+      return <CheckCircle className="h-5 w-5 text-green-500" />
+  }
+}
+
+const getAlertBadge = (severity: string) => {
+  switch (severity) {
+    case "high":
+      return <Badge variant="destructive">高</Badge>
+    case "medium":
+      return <Badge variant="outline">中</Badge>
+    case "low":
+      return <Badge variant="secondary">低</Badge>
+    default:
+      return <Badge variant="default" className="bg-green-100 text-green-800">完了</Badge>
+  }
+}
+
 export default function DataPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedSource, setSelectedSource] = useState("all")
+  
+  const { user, isLoading: authLoading } = useAuth()
+  const { dataSources, loading: sourcesLoading, error: sourcesError, refetch: refetchSources } = useDataSources()
+  const { rawRecords, loading: recordsLoading, error: recordsError, refetch: refetchRecords } = useRawRecords(searchTerm, selectedSource)
+  const { mappings, loading: mappingsLoading, error: mappingsError, refetch: refetchMappings, updateMapping } = useKPIMappings()
+  const { stats, loading: statsLoading, error: statsError, refetch: refetchStats } = useDataStats()
+
+  const handleRefresh = async () => {
+    await Promise.all([
+      refetchSources(),
+      refetchRecords(),
+      refetchMappings(),
+      refetchStats()
+    ])
+  }
+
+  const handleApproveMapping = async (id: string) => {
+    await updateMapping(id, true)
+  }
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <div className="container mx-auto py-8 px-4">
+          <div className="flex items-center justify-center h-64">
+            <Loader2 className="h-8 w-8 animate-spin" />
+            <span className="ml-2">読み込み中...</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <div className="container mx-auto py-8 px-4">
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              データ管理機能を使用するにはログインが必要です。
+            </AlertDescription>
+          </Alert>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -84,8 +140,8 @@ export default function DataPage() {
               <Download className="h-4 w-4 mr-2" />
               エクスポート
             </Button>
-            <Button size="sm">
-              <RefreshCw className="h-4 w-4 mr-2" />
+            <Button size="sm" onClick={handleRefresh} disabled={statsLoading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${statsLoading ? 'animate-spin' : ''}`} />
               同期
             </Button>
           </div>
@@ -99,10 +155,16 @@ export default function DataPage() {
               <Database className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">12</div>
-              <p className="text-xs text-muted-foreground">
-                +2 from last month
-              </p>
+              {statsLoading ? (
+                <Loader2 className="h-6 w-6 animate-spin" />
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">{stats?.overview.totalDataSources || 0}</div>
+                  <p className="text-xs text-muted-foreground">
+                    +{stats?.overview.newSourcesLastMonth || 0} from last month
+                  </p>
+                </>
+              )}
             </CardContent>
           </Card>
           
@@ -112,10 +174,16 @@ export default function DataPage() {
               <CheckCircle className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">4,240</div>
-              <p className="text-xs text-muted-foreground">
-                +180 from yesterday
-              </p>
+              {statsLoading ? (
+                <Loader2 className="h-6 w-6 animate-spin" />
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">{stats?.overview.processedRecords?.toLocaleString() || 0}</div>
+                  <p className="text-xs text-muted-foreground">
+                    +{stats?.overview.recordsYesterday || 0} from yesterday
+                  </p>
+                </>
+              )}
             </CardContent>
           </Card>
           
@@ -125,8 +193,14 @@ export default function DataPage() {
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">94%</div>
-              <Progress value={94} className="mt-2" />
+              {statsLoading ? (
+                <Loader2 className="h-6 w-6 animate-spin" />
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">{stats?.overview.dataQualityScore || 0}%</div>
+                  <Progress value={stats?.overview.dataQualityScore || 0} className="mt-2" />
+                </>
+              )}
             </CardContent>
           </Card>
           
@@ -136,10 +210,16 @@ export default function DataPage() {
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">3</div>
-              <p className="text-xs text-muted-foreground">
-                2 files in queue
-              </p>
+              {statsLoading ? (
+                <Loader2 className="h-6 w-6 animate-spin" />
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">{stats?.overview.pendingRecords || 0}</div>
+                  <p className="text-xs text-muted-foreground">
+                    {stats?.overview.pendingRecords ? `${stats.overview.pendingRecords} files in queue` : 'No files in queue'}
+                  </p>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -163,27 +243,45 @@ export default function DataPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {mockDataSources.map((source) => (
-                    <div key={source.id} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div className="flex items-center space-x-4">
-                        <div className="p-2 bg-primary/10 rounded-lg">
-                          {source.type === "csv" && <FileText className="h-5 w-5 text-primary" />}
-                          {source.type === "api" && <Zap className="h-5 w-5 text-primary" />}
-                          {source.type === "webhook" && <Database className="h-5 w-5 text-primary" />}
+                {sourcesLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                    読み込み中...
+                  </div>
+                ) : sourcesError ? (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      データソースの読み込みに失敗しました: {sourcesError}
+                    </AlertDescription>
+                  </Alert>
+                ) : dataSources.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    データソースがありません
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {dataSources.map((source) => (
+                      <div key={source.id} className="flex items-center justify-between p-4 border rounded-lg">
+                        <div className="flex items-center space-x-4">
+                          <div className="p-2 bg-primary/10 rounded-lg">
+                            {source.type === "csv" && <FileText className="h-5 w-5 text-primary" />}
+                            {source.type === "api" && <Zap className="h-5 w-5 text-primary" />}
+                            {source.type === "webhook" && <Database className="h-5 w-5 text-primary" />}
+                          </div>
+                          <div>
+                            <h3 className="font-semibold">{source.name}</h3>
+                            <p className="text-sm text-muted-foreground">{source.department}部門</p>
+                          </div>
                         </div>
-                        <div>
-                          <h3 className="font-semibold">{source.name}</h3>
-                          <p className="text-sm text-muted-foreground">{source.department}部門</p>
+                        <div className="text-right">
+                          <p className="font-semibold">{source.records.toLocaleString()} レコード</p>
+                          <p className="text-sm text-muted-foreground">最終更新: {source.lastUpdate}</p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-semibold">{source.records.toLocaleString()} レコード</p>
-                        <p className="text-sm text-muted-foreground">最終更新: {source.lastUpdate}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -215,43 +313,67 @@ export default function DataPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">全て</SelectItem>
-                        <SelectItem value="人事部門">人事部門</SelectItem>
-                        <SelectItem value="財務API">財務API</SelectItem>
-                        <SelectItem value="環境データ">環境データ</SelectItem>
+                        {dataSources.map((source) => (
+                          <SelectItem key={source.id} value={source.name}>
+                            {source.name}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>ファイル名</TableHead>
-                      <TableHead>ソース</TableHead>
-                      <TableHead>レコード数</TableHead>
-                      <TableHead>ステータス</TableHead>
-                      <TableHead>アップロード時刻</TableHead>
-                      <TableHead>アクション</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {mockRawRecords.map((record) => (
-                      <TableRow key={record.id}>
-                        <TableCell className="font-medium">{record.filename}</TableCell>
-                        <TableCell>{record.source}</TableCell>
-                        <TableCell>{record.records.toLocaleString()}</TableCell>
-                        <TableCell>{getStatusBadge(record.status)}</TableCell>
-                        <TableCell>{record.uploadTime}</TableCell>
-                        <TableCell>
-                          <Button variant="ghost" size="sm">
-                            詳細
-                          </Button>
-                        </TableCell>
+                {recordsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                    読み込み中...
+                  </div>
+                ) : recordsError ? (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      レコードの読み込みに失敗しました: {recordsError}
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>ファイル名</TableHead>
+                        <TableHead>ソース</TableHead>
+                        <TableHead>レコード数</TableHead>
+                        <TableHead>ステータス</TableHead>
+                        <TableHead>アップロード時刻</TableHead>
+                        <TableHead>アクション</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {rawRecords.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                            レコードがありません
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        rawRecords.map((record) => (
+                          <TableRow key={record.id}>
+                            <TableCell className="font-medium">{record.filename}</TableCell>
+                            <TableCell>{record.source}</TableCell>
+                            <TableCell>{record.records.toLocaleString()}</TableCell>
+                            <TableCell>{getStatusBadge(record.status)}</TableCell>
+                            <TableCell>{record.uploadTime}</TableCell>
+                            <TableCell>
+                              <Button variant="ghost" size="sm">
+                                詳細
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -266,44 +388,71 @@ export default function DataPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>データ列</TableHead>
-                      <TableHead>マッピング先KPI</TableHead>
-                      <TableHead>信頼度</TableHead>
-                      <TableHead>単位</TableHead>
-                      <TableHead>ステータス</TableHead>
-                      <TableHead>アクション</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {mockKPIMappings.map((mapping) => (
-                      <TableRow key={mapping.id}>
-                        <TableCell className="font-mono text-sm">{mapping.column}</TableCell>
-                        <TableCell>{mapping.kpi}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <Progress value={mapping.confidence} className="w-16" />
-                            <span className="text-sm">{mapping.confidence}%</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>{mapping.unit}</TableCell>
-                        <TableCell>{getStatusBadge(mapping.status)}</TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Button variant="ghost" size="sm">
-                              編集
-                            </Button>
-                            <Button variant="ghost" size="sm">
-                              承認
-                            </Button>
-                          </div>
-                        </TableCell>
+                {mappingsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                    読み込み中...
+                  </div>
+                ) : mappingsError ? (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      マッピングの読み込みに失敗しました: {mappingsError}
+                    </AlertDescription>
+                  </Alert>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>データ列</TableHead>
+                        <TableHead>マッピング先KPI</TableHead>
+                        <TableHead>信頼度</TableHead>
+                        <TableHead>単位</TableHead>
+                        <TableHead>ステータス</TableHead>
+                        <TableHead>アクション</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {mappings.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                            マッピングがありません
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        mappings.map((mapping) => (
+                          <TableRow key={mapping.id}>
+                            <TableCell className="font-mono text-sm">{mapping.column}</TableCell>
+                            <TableCell>{mapping.kpi}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center space-x-2">
+                                <Progress value={mapping.confidence} className="w-16" />
+                                <span className="text-sm">{mapping.confidence}%</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>{mapping.unit}</TableCell>
+                            <TableCell>{getStatusBadge(mapping.status)}</TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <Button variant="ghost" size="sm">
+                                  編集
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  onClick={() => handleApproveMapping(mapping.id)}
+                                  disabled={mapping.status === 'validated'}
+                                >
+                                  {mapping.status === 'validated' ? '承認済み' : '承認'}
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -316,34 +465,43 @@ export default function DataPage() {
                   <CardTitle>データ品質メトリクス</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>完全性</span>
-                      <span>96%</span>
+                  {statsLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                      読み込み中...
                     </div>
-                    <Progress value={96} />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>正確性</span>
-                      <span>94%</span>
-                    </div>
-                    <Progress value={94} />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>一貫性</span>
-                      <span>92%</span>
-                    </div>
-                    <Progress value={92} />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>適時性</span>
-                      <span>98%</span>
-                    </div>
-                    <Progress value={98} />
-                  </div>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>完全性</span>
+                          <span>{stats?.quality.completeness || 0}%</span>
+                        </div>
+                        <Progress value={stats?.quality.completeness || 0} />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>正確性</span>
+                          <span>{stats?.quality.accuracy || 0}%</span>
+                        </div>
+                        <Progress value={stats?.quality.accuracy || 0} />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>一貫性</span>
+                          <span>{stats?.quality.consistency || 0}%</span>
+                        </div>
+                        <Progress value={stats?.quality.consistency || 0} />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>適時性</span>
+                          <span>{stats?.quality.timeliness || 0}%</span>
+                        </div>
+                        <Progress value={stats?.quality.timeliness || 0} />
+                      </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
 
@@ -352,32 +510,30 @@ export default function DataPage() {
                   <CardTitle>品質アラート</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
-                    <div className="flex items-center space-x-3 p-3 border rounded-lg">
-                      <AlertCircle className="h-5 w-5 text-yellow-500" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">重複データ検出</p>
-                        <p className="text-xs text-muted-foreground">employee_data_2024.csv</p>
-                      </div>
-                      <Badge variant="outline">中</Badge>
+                  {statsLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                      読み込み中...
                     </div>
-                    <div className="flex items-center space-x-3 p-3 border rounded-lg">
-                      <AlertCircle className="h-5 w-5 text-red-500" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">必須フィールド欠損</p>
-                        <p className="text-xs text-muted-foreground">carbon_emissions.xlsx</p>
-                      </div>
-                      <Badge variant="destructive">高</Badge>
+                  ) : stats?.alerts && stats.alerts.length > 0 ? (
+                    <div className="space-y-3">
+                      {stats.alerts.map((alert, index) => (
+                        <div key={index} className="flex items-center space-x-3 p-3 border rounded-lg">
+                          {getAlertIcon(alert.type)}
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">{alert.title}</p>
+                            <p className="text-xs text-muted-foreground">{alert.description}</p>
+                          </div>
+                          {getAlertBadge(alert.severity)}
+                        </div>
+                      ))}
                     </div>
-                    <div className="flex items-center space-x-3 p-3 border rounded-lg">
-                      <CheckCircle className="h-5 w-5 text-green-500" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">品質チェック完了</p>
-                        <p className="text-xs text-muted-foreground">financial_metrics.json</p>
-                      </div>
-                      <Badge variant="default" className="bg-green-100 text-green-800">完了</Badge>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-500" />
+                      品質アラートはありません
                     </div>
-                  </div>
+                  )}
                 </CardContent>
               </Card>
             </div>

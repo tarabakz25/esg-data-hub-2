@@ -35,14 +35,24 @@ export async function middleware(request: NextRequest) {
   // issues with users being randomly logged out.
 
   let user = null
+  let authError = null
+  
   try {
     const { data: { user: authUser }, error } = await supabase.auth.getUser()
     user = authUser
+    authError = error
     
     // Add debugging for API routes
     if (request.nextUrl.pathname.startsWith('/api/')) {
       console.log('Middleware - API route:', request.nextUrl.pathname)
-      console.log('Middleware - Auth error:', error?.message || 'none')
+      
+      // Only log Auth session missing as info, not error
+      if (error?.name === 'AuthSessionMissingError') {
+        console.log('Middleware - Auth session missing (expected for unauthenticated requests)')
+      } else if (error) {
+        console.log('Middleware - Auth error:', error.message)
+      }
+      
       console.log('Middleware - User:', user ? `${user.id} (${user.email})` : 'null')
       console.log('Middleware - Cookies count:', request.cookies.getAll().length)
       
@@ -50,8 +60,9 @@ export async function middleware(request: NextRequest) {
       const authCookie = request.cookies.get('sb-udugwvkkmcwnspwjhlws-auth-token')
       console.log('Middleware - Auth cookie present:', !!authCookie)
     }
-  } catch (authError) {
-    console.error('Middleware - Auth check failed:', authError)
+  } catch (error) {
+    authError = error
+    console.error('Middleware - Auth check failed:', error)
   }
 
   // Protect API routes (except public ones)

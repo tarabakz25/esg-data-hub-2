@@ -1,6 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useAuth } from "@/hooks/use-auth"
+import { createClient } from "@/lib/supabase/client"
 import { Navigation } from "@/components/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -35,18 +37,38 @@ export default function MissingKPIsPage() {
   const [loading, setLoading] = useState(true)
   const [selectedPeriod, setSelectedPeriod] = useState(new Date().getFullYear().toString())
   const [selectedCategory, setSelectedCategory] = useState("all")
+  
+  const { user, isLoading } = useAuth()
+  const supabase = createClient()
 
   useEffect(() => {
-    fetchMissingKPIs()
-  }, [selectedPeriod])
+    if (!isLoading && user) {
+      fetchMissingKPIs()
+    }
+  }, [selectedPeriod, isLoading, user])
 
   const fetchMissingKPIs = async () => {
+    if (!user) return
+    
     setLoading(true)
     try {
-      const response = await fetch(`/api/missing-kpis?period=${selectedPeriod}`)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        console.error('No active session')
+        return
+      }
+
+      const response = await fetch(`/api/missing-kpis?period=${selectedPeriod}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+      
       if (response.ok) {
         const result = await response.json()
         setData(result)
+      } else {
+        console.error('Failed to fetch missing KPIs:', response.status, response.statusText)
       }
     } catch (error) {
       console.error('Failed to fetch missing KPIs:', error)
@@ -111,11 +133,11 @@ export default function MissingKPIsPage() {
     }
   }
 
-  const filteredKPIs = data?.missing_kpis.filter(kpi => 
+  const filteredKPIs = data?.missing_kpis?.filter(kpi => 
     selectedCategory === 'all' || kpi.category === selectedCategory
   ) || []
 
-  if (loading) {
+  if (loading || !data) {
     return (
       <div className="min-h-screen">
         <Navigation />
@@ -226,7 +248,7 @@ export default function MissingKPIsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {data?.summary.total_required 
+                {data?.summary?.total_required 
                   ? Math.round(((data.summary.total_required - data.summary.total_missing) / data.summary.total_required) * 100)
                   : 0}%
               </div>
@@ -253,13 +275,13 @@ export default function MissingKPIsPage() {
         </div>
 
         {/* アラート */}
-        {data && data.summary.total_missing > 0 && (
+        {data && data.summary?.total_missing > 0 && (
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>欠損KPIが検出されました</AlertTitle>
             <AlertDescription>
-              {data.summary.total_missing}件の必須KPIが不足しています。
-              特に高優先度の{data.summary.by_urgency.high || 0}件は早急な対応が必要です。
+              {data.summary?.total_missing}件の必須KPIが不足しています。
+              特に高優先度の{data.summary?.by_urgency?.high || 0}件は早急な対応が必要です。
             </AlertDescription>
           </Alert>
         )}

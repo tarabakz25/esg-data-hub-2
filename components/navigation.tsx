@@ -32,7 +32,7 @@ import {
 const navigation = [
   {
     name: "ダッシュボード",
-    href: "/",
+    href: "/dashboard",
     icon: Home,
     description: "ESGデータの概要と進捗状況"
   },
