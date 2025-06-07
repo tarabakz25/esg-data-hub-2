@@ -21,6 +21,8 @@ import {
   Send
 } from "lucide-react"
 import { MissingKPIAlert } from "@/lib/types"
+import { useToast } from "@/hooks/use-toast"
+import { Toaster } from "@/components/ui/toaster"
 
 interface MissingKPIData {
   missing_kpis: MissingKPIAlert[]
@@ -48,6 +50,7 @@ export default function MissingKPIsPage() {
   
   const { user, isLoading } = useAuth()
   const supabase = createClient()
+  const { toast } = useToast()
 
   useEffect(() => {
     if (!isLoading && user) {
@@ -97,18 +100,45 @@ export default function MissingKPIsPage() {
 
   const sendReminder = async (kpiId: string) => {
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        console.error('No active session')
+        return
+      }
+
       const response = await fetch('/api/missing-kpis/reminder', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({ kpi_id: kpiId, period: selectedPeriod })
       })
       
       if (response.ok) {
-        // リマインダー送信成功の処理
-        console.log('Reminder sent successfully')
+        const result = await response.json()
+        console.log('Reminder sent successfully:', result.message)
+        toast({
+          title: "リマインダー送信完了",
+          description: result.message,
+          variant: "success",
+        })
+      } else {
+        const errorText = await response.text()
+        console.error('Failed to send reminder:', errorText)
+        toast({
+          title: "エラー",
+          description: "リマインダーの送信に失敗しました",
+          variant: "destructive",
+        })
       }
     } catch (error) {
       console.error('Failed to send reminder:', error)
+      toast({
+        title: "エラー",
+        description: "リマインダーの送信中にエラーが発生しました",
+        variant: "destructive",
+      })
     }
   }
 
@@ -448,6 +478,7 @@ export default function MissingKPIsPage() {
           </TabsContent>
         </Tabs>
       </main>
+      <Toaster />
     </div>
   )
 } 

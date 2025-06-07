@@ -92,6 +92,44 @@ const getConfidenceBadge = (confidence: number) => {
   }
 }
 
+// KPI名を標準化して表示用に変換する関数
+const standardizeKPIName = (originalKpiName: string, dataColumnName: string) => {
+  // データ列名とKPI名が同じ場合は、より標準的なKPI名に変換
+  const kpiMappings: Record<string, string> = {
+    "温室効果ガス排出量（スコープ1）": "Scope 1 GHG排出量",
+    "温室効果ガス排出量（スコープ2）": "Scope 2 GHG排出量", 
+    "温室効果ガス排出量（スコープ3）": "Scope 3 GHG排出量",
+    "従業員数": "総従業員数",
+    "水使用量": "年間水使用量",
+    "廃棄物発生量": "年間廃棄物発生量",
+    "女性管理職比率": "女性管理職割合",
+    "労働災害件数": "年間労働災害件数",
+    "取締役会の多様性": "取締役会多様性指数",
+    "売上高": "年間売上高",
+    "純利益": "当期純利益",
+    "エネルギー使用量": "年間エネルギー消費量",
+    "再生可能エネルギー比率": "再エネ利用率",
+    "廃棄物リサイクル率": "リサイクル率",
+    "研修時間": "従業員研修時間",
+    "離職率": "年間離職率",
+    "顧客満足度": "CS指数",
+    "コンプライアンス違反件数": "法令違反件数"
+  }
+
+  // マッピングがある場合は標準化された名前を返す
+  if (kpiMappings[originalKpiName]) {
+    return kpiMappings[originalKpiName]
+  }
+
+  // データ列名と完全に同じ場合は「KPI:」プレフィックスを追加
+  if (originalKpiName === dataColumnName) {
+    return `KPI: ${originalKpiName}`
+  }
+
+  // それ以外はそのまま返す
+  return originalKpiName
+}
+
 export default function DataPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedSource, setSelectedSource] = useState("all")
@@ -338,7 +376,7 @@ export default function DataPage() {
                             <TableRow>
                               <TableHead className="w-12">選択</TableHead>
                               <TableHead>データ列</TableHead>
-                              <TableHead>提案KPI</TableHead>
+                              <TableHead>推奨KPI</TableHead>
                               <TableHead>信頼度</TableHead>
                               <TableHead>カテゴリ</TableHead>
                               <TableHead>単位</TableHead>
@@ -355,7 +393,7 @@ export default function DataPage() {
                                   />
                                 </TableCell>
                                 <TableCell className="font-mono text-sm">{mapping.column}</TableCell>
-                                <TableCell>{mapping.kpi_name}</TableCell>
+                                <TableCell>{standardizeKPIName(mapping.kpi_name, mapping.column)}</TableCell>
                                 <TableCell>
                                   <div className="flex items-center gap-2">
                                     {getConfidenceBadge(mapping.confidence)}
@@ -408,7 +446,10 @@ export default function DataPage() {
 
             {/* Raw Record Auto Mapping Dialog */}
             <Dialog open={isRecordMapDialogOpen} onOpenChange={setIsRecordMapDialogOpen}>
-              <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+              <DialogContent 
+                className="!max-w-none !w-[90vw] max-h-[85vh] overflow-y-auto"
+                style={{ maxWidth: 'none !important', width: '90vw !important' }}
+              >
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2">
                     <Sparkles className="h-5 w-5 text-purple-600" />
@@ -464,13 +505,13 @@ export default function DataPage() {
                           </div>
 
                           <div className="border rounded-lg overflow-hidden">
-                            <div className="max-h-[400px] overflow-y-auto">
+                            <div className="max-h-[400px] overflow-x-auto overflow-y-auto">
                               <Table>
                                 <TableHeader>
                                   <TableRow>
                                     <TableHead className="w-12">選択</TableHead>
                                     <TableHead>データ列</TableHead>
-                                    <TableHead>提案KPI</TableHead>
+                                    <TableHead>推奨KPI</TableHead>
                                     <TableHead>信頼度</TableHead>
                                     <TableHead>カテゴリ</TableHead>
                                     <TableHead>単位</TableHead>
@@ -487,7 +528,7 @@ export default function DataPage() {
                                         />
                                       </TableCell>
                                       <TableCell className="font-mono text-sm">{mapping.column}</TableCell>
-                                      <TableCell>{mapping.kpi_name}</TableCell>
+                                      <TableCell>{standardizeKPIName(mapping.kpi_name, mapping.column)}</TableCell>
                                       <TableCell>
                                         <div className="flex items-center gap-2">
                                           {getConfidenceBadge(mapping.confidence)}
@@ -874,7 +915,7 @@ export default function DataPage() {
                         mappings.map((mapping) => (
                           <TableRow key={mapping.id}>
                             <TableCell className="font-mono text-sm">{mapping.column}</TableCell>
-                            <TableCell>{mapping.kpi}</TableCell>
+                            <TableCell>{standardizeKPIName(mapping.kpi, mapping.column)}</TableCell>
                             <TableCell>
                               <div className="flex items-center space-x-2">
                                 <Progress value={mapping.confidence} className="w-16" />
