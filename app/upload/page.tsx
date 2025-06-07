@@ -20,8 +20,12 @@ import {
   AlertCircle,
   X,
   Database,
-  Loader2
+  Loader2,
+  ArrowRight,
+  BarChart3,
+  AlertTriangle
 } from "lucide-react"
+import Link from "next/link"
 
 interface UploadFile {
   file: File
@@ -122,10 +126,16 @@ export default function UploadPage() {
       const { data: { session } } = await supabase.auth.getSession()
       console.log('Current session:', session)
 
+      if (!session) {
+        throw new Error('No active session')
+      }
+
       const response = await fetch('/api/upload', {
         method: 'POST',
         body: formData,
-        // Supabase authentication works via cookies, so no additional headers needed
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
       })
 
       console.log('Response status:', response.status)
@@ -214,6 +224,10 @@ export default function UploadPage() {
     }
   }
 
+  // Check if all files are successfully uploaded
+  const allFilesUploaded = files.length > 0 && files.every(f => f.status === 'success')
+  const successfulUploads = files.filter(f => f.status === 'success').length
+
   if (isLoading) {
     return (
       <div className="min-h-screen">
@@ -277,11 +291,11 @@ export default function UploadPage() {
                       <SelectValue placeholder="データソースを選択" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="hr-dept">人事部</SelectItem>
-                      <SelectItem value="finance-dept">財務部</SelectItem>
-                      <SelectItem value="operations-dept">事業部</SelectItem>
-                      <SelectItem value="sustainability-dept">サステナビリティ部</SelectItem>
-                      <SelectItem value="external-api">外部API</SelectItem>
+                      <SelectItem value="11111111-1111-1111-1111-111111111111">人事部</SelectItem>
+                      <SelectItem value="22222222-2222-2222-2222-222222222222">財務部</SelectItem>
+                      <SelectItem value="33333333-3333-3333-3333-333333333333">事業部</SelectItem>
+                      <SelectItem value="44444444-4444-4444-4444-444444444444">サステナビリティ部</SelectItem>
+                      <SelectItem value="55555555-5555-5555-5555-555555555555">外部API</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -487,6 +501,63 @@ export default function UploadPage() {
                       </div>
                     ))}
                   </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 成功メッセージとNext Steps */}
+            {allFilesUploaded && (
+              <Card className="border-green-200 bg-green-50">
+                <CardHeader>
+                  <CardTitle className="flex items-center text-green-800">
+                    <CheckCircle className="mr-2 h-5 w-5" />
+                    アップロード完了
+                  </CardTitle>
+                  <CardDescription className="text-green-700">
+                    {successfulUploads}個のファイルが正常にアップロードされました。次のステップに進んでください。
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-3">
+                    <div className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                      <div className="flex items-center space-x-3">
+                        <BarChart3 className="h-5 w-5 text-blue-600" />
+                        <div>
+                          <p className="font-medium">データ管理</p>
+                          <p className="text-sm text-muted-foreground">アップロードされたデータの確認と品質チェック</p>
+                        </div>
+                      </div>
+                      <Button asChild size="sm">
+                        <Link href="/data">
+                          確認する
+                          <ArrowRight className="ml-2 h-4 w-4" />
+                        </Link>
+                      </Button>
+                    </div>
+                    
+                    <div className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                      <div className="flex items-center space-x-3">
+                        <AlertTriangle className="h-5 w-5 text-orange-600" />
+                        <div>
+                          <p className="font-medium">欠損チェック</p>
+                          <p className="text-sm text-muted-foreground">必須KPIの欠損状況を確認</p>
+                        </div>
+                      </div>
+                      <Button asChild variant="outline" size="sm">
+                        <Link href="/missing-kpis">
+                          チェックする
+                          <ArrowRight className="ml-2 h-4 w-4" />
+                        </Link>
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  <Alert>
+                    <FileText className="h-4 w-4" />
+                    <AlertDescription>
+                      <strong>推奨フロー:</strong> データ管理 → 欠損チェック → レポート生成 → 監査証跡の順で進めることをお勧めします。
+                    </AlertDescription>
+                  </Alert>
                 </CardContent>
               </Card>
             )}

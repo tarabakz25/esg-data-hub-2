@@ -1,10 +1,52 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { dataProcessor } from '@/lib/services/data-processor'
 import { slackService } from '@/lib/services/slack'
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('Upload API - Starting request processing')
+    
+    // First, try cookie-based authentication
+    const supabase = await createClient()
+    let { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    // If cookie auth fails, try Authorization header
+    if (!user && request.headers.get('authorization')) {
+      const authHeader = request.headers.get('authorization')
+      const token = authHeader?.replace('Bearer ', '')
+      
+      if (token) {
+        console.log('Upload API - Trying token-based authentication')
+        // Create a new client with the token
+        const tokenSupabase = await createServiceClient()
+        const { data: tokenUser, error: tokenError } = await tokenSupabase.auth.getUser(token)
+        
+        if (tokenUser && !tokenError) {
+          user = tokenUser
+          authError = null
+          console.log('Upload API - Token authentication successful')
+        } else {
+          console.log('Upload API - Token authentication failed:', tokenError?.message)
+        }
+      }
+    }
+
+    console.log('Upload API - Auth check result:', {
+      user: user ? `${user.id} (${user.email})` : 'null',
+      authError: authError?.message || 'none'
+    })
+
+    if (authError || !user) {
+      console.log('Upload API - Authentication failed, returning 401')
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    console.log('Upload API - User authenticated, proceeding with upload')
+
     const formData = await request.formData()
     const file = formData.get('file') as File
     const dataSourceId = formData.get('data_source_id') as string
@@ -36,13 +78,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const supabase = await createServiceClient()
+    // Use service client for storage operations that require elevated privileges
+    const serviceSupabase = await createServiceClient()
 
     // Upload file to Supabase Storage
     const fileBuffer = await file.arrayBuffer()
     const fileName = `${Date.now()}-${file.name}`
     
-    const { data: uploadData, error: uploadError } = await supabase.storage
+    const { data: uploadData, error: uploadError } = await serviceSupabase.storage
       .from('esg-files')
       .upload(fileName, fileBuffer, {
         contentType: file.type,
@@ -69,7 +112,7 @@ export async function POST(request: NextRequest) {
     // Add support for Excel files later
 
     // Create raw record in database
-    const { data: rawRecord, error: dbError } = await supabase
+    const { data: rawRecord, error: dbError } = await serviceSupabase
       .from('raw_records')
       .insert({
         data_source_id: dataSourceId,

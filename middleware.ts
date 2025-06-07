@@ -12,10 +12,13 @@ export async function middleware(request: NextRequest) {
     {
       cookies: {
         getAll() {
-          return request.cookies.getAll()
+          const cookies = request.cookies.getAll()
+          return cookies
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+          cookiesToSet.forEach(({ name, value, options }) => {
+            request.cookies.set(name, value)
+          })
           supabaseResponse = NextResponse.next({
             request,
           })
@@ -31,9 +34,25 @@ export async function middleware(request: NextRequest) {
   // supabase.auth.getUser(). A simple mistake could make it very hard to debug
   // issues with users being randomly logged out.
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  let user = null
+  try {
+    const { data: { user: authUser }, error } = await supabase.auth.getUser()
+    user = authUser
+    
+    // Add debugging for API routes
+    if (request.nextUrl.pathname.startsWith('/api/')) {
+      console.log('Middleware - API route:', request.nextUrl.pathname)
+      console.log('Middleware - Auth error:', error?.message || 'none')
+      console.log('Middleware - User:', user ? `${user.id} (${user.email})` : 'null')
+      console.log('Middleware - Cookies count:', request.cookies.getAll().length)
+      
+      // Check for auth token
+      const authCookie = request.cookies.get('sb-udugwvkkmcwnspwjhlws-auth-token')
+      console.log('Middleware - Auth cookie present:', !!authCookie)
+    }
+  } catch (authError) {
+    console.error('Middleware - Auth check failed:', authError)
+  }
 
   // Protect API routes (except public ones)
   if (request.nextUrl.pathname.startsWith('/api/')) {
@@ -42,11 +61,19 @@ export async function middleware(request: NextRequest) {
       request.nextUrl.pathname.startsWith(route)
     )
 
-    if (!isPublicRoute && !user) {
+    // Allow requests with Authorization header to pass through to API route
+    const hasAuthHeader = request.headers.get('authorization')
+
+    if (!isPublicRoute && !user && !hasAuthHeader) {
+      console.log('Middleware - Blocking unauthenticated request to:', request.nextUrl.pathname)
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
       )
+    }
+
+    if (hasAuthHeader) {
+      console.log('Middleware - Allowing request with Authorization header to pass through')
     }
   }
 
