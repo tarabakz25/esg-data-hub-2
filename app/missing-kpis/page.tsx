@@ -32,9 +32,17 @@ interface MissingKPIData {
   }
 }
 
+const defaultSummary = {
+  total_required: 0,
+  total_missing: 0,
+  by_category: {},
+  by_urgency: {}
+}
+
 export default function MissingKPIsPage() {
   const [data, setData] = useState<MissingKPIData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [selectedPeriod, setSelectedPeriod] = useState(new Date().getFullYear().toString())
   const [selectedCategory, setSelectedCategory] = useState("all")
   
@@ -51,10 +59,12 @@ export default function MissingKPIsPage() {
     if (!user) return
     
     setLoading(true)
+    setError(null)
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
         console.error('No active session')
+        setError('認証セッションが見つかりません')
         return
       }
 
@@ -66,12 +76,20 @@ export default function MissingKPIsPage() {
       
       if (response.ok) {
         const result = await response.json()
-        setData(result)
+        // サマリーが存在しない場合のデフォルト値を設定
+        const processedResult = {
+          missing_kpis: result.missing_kpis || [],
+          summary: result.summary || defaultSummary
+        }
+        setData(processedResult)
       } else {
-        console.error('Failed to fetch missing KPIs:', response.status, response.statusText)
+        const errorText = await response.text()
+        console.error('Failed to fetch missing KPIs:', response.status, response.statusText, errorText)
+        setError(`データの取得に失敗しました: ${response.status}`)
       }
     } catch (error) {
       console.error('Failed to fetch missing KPIs:', error)
+      setError('データの取得中にエラーが発生しました')
     } finally {
       setLoading(false)
     }
@@ -137,6 +155,27 @@ export default function MissingKPIsPage() {
     selectedCategory === 'all' || kpi.category === selectedCategory
   ) || []
 
+  // エラー状態の表示
+  if (error) {
+    return (
+      <div className="min-h-screen">
+        <Navigation />
+        <main className="container mx-auto py-6">
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>エラーが発生しました</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+          <Button onClick={fetchMissingKPIs} className="mt-4">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            再試行
+          </Button>
+        </main>
+      </div>
+    )
+  }
+
+  // ローディング状態の表示
   if (loading || !data) {
     return (
       <div className="min-h-screen">
@@ -160,11 +199,14 @@ export default function MissingKPIsPage() {
     )
   }
 
+  // データが正常に取得できた場合のサマリー情報（デフォルト値を使用）
+  const summary = data.summary || defaultSummary
+
   return (
     <div className="min-h-screen">
       <Navigation />
       
-      <main className="container mx-auto py-6 space-y-6">
+      <main className="container mx-auto py-6 space-y-6 px-5">
         <div className="flex flex-col space-y-2">
           <h1 className="text-3xl font-bold tracking-tight">欠損KPIチェック</h1>
           <p className="text-muted-foreground">
@@ -218,7 +260,7 @@ export default function MissingKPIsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {data?.summary.total_required || 0}
+                {summary.total_required}
               </div>
               <p className="text-xs text-muted-foreground">
                 ISSB基準必須項目
@@ -233,7 +275,7 @@ export default function MissingKPIsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-500">
-                {data?.summary.total_missing || 0}
+                {summary.total_missing}
               </div>
               <p className="text-xs text-muted-foreground">
                 要対応項目
@@ -248,8 +290,8 @@ export default function MissingKPIsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {data?.summary?.total_required 
-                  ? Math.round(((data.summary.total_required - data.summary.total_missing) / data.summary.total_required) * 100)
+                {summary.total_required 
+                  ? Math.round(((summary.total_required - summary.total_missing) / summary.total_required) * 100)
                   : 0}%
               </div>
               <p className="text-xs text-muted-foreground">
@@ -265,7 +307,7 @@ export default function MissingKPIsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-orange-500">
-                {data?.summary.by_urgency.high || 0}
+                {summary.by_urgency.high || 0}
               </div>
               <p className="text-xs text-muted-foreground">
                 緊急対応必要
@@ -275,13 +317,13 @@ export default function MissingKPIsPage() {
         </div>
 
         {/* アラート */}
-        {data && data.summary?.total_missing > 0 && (
+        {summary.total_missing > 0 && (
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>欠損KPIが検出されました</AlertTitle>
             <AlertDescription>
-              {data.summary?.total_missing}件の必須KPIが不足しています。
-              特に高優先度の{data.summary?.by_urgency?.high || 0}件は早急な対応が必要です。
+              {summary.total_missing}件の必須KPIが不足しています。
+              特に高優先度の{summary.by_urgency.high || 0}件は早急な対応が必要です。
             </AlertDescription>
           </Alert>
         )}
@@ -355,7 +397,7 @@ export default function MissingKPIsPage() {
 
           <TabsContent value="category" className="space-y-4">
             <div className="grid gap-6 md:grid-cols-3">
-              {Object.entries(data?.summary.by_category || {}).map(([category, count]) => (
+              {Object.entries(summary.by_category).map(([category, count]) => (
                 <Card key={category}>
                   <CardHeader>
                     <CardTitle>{getCategoryText(category)}</CardTitle>
@@ -378,7 +420,7 @@ export default function MissingKPIsPage() {
 
           <TabsContent value="urgency" className="space-y-4">
             <div className="grid gap-6 md:grid-cols-3">
-              {Object.entries(data?.summary.by_urgency || {}).map(([urgency, count]) => (
+              {Object.entries(summary.by_urgency).map(([urgency, count]) => (
                 <Card key={urgency}>
                   <CardHeader>
                     <CardTitle>優先度: {getUrgencyText(urgency)}</CardTitle>

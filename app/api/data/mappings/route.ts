@@ -114,24 +114,28 @@ export async function POST(request: NextRequest) {
         // If raw_data is empty or invalid, use sample data for testing
         if (!dataToProcess || !Array.isArray(dataToProcess) || dataToProcess.length === 0) {
           console.log('Raw data is empty, using sample data for testing')
-          dataToProcess = [
-            {
-              "売上": 1000000,
-              "CO2排出量": 150.5,
-              "従業員数": 120,
-              "水使用量": 2500,
-              "廃棄物量": 45.2,
-              "エネルギー使用量": 850000
-            },
-            {
-              "売上": 1200000,
-              "CO2排出量": 148.2,
-              "従業員数": 125,
-              "水使用量": 2600,
-              "廃棄物量": 43.1,
-              "エネルギー使用量": 880000
-            }
-          ]
+                  dataToProcess = [
+          {
+            "温室効果ガス排出量（スコープ1）": 150.5,
+            "温室効果ガス排出量（スコープ2）": 88.2,
+            "従業員数": 120,
+            "水使用量": 2500,
+            "廃棄物発生量": 45.2,
+            "女性管理職比率": 25.5,
+            "労働災害件数": 2,
+            "取締役会の多様性": 40.0
+          },
+          {
+            "温室効果ガス排出量（スコープ1）": 148.2,
+            "温室効果ガス排出量（スコープ2）": 85.6,
+            "従業員数": 125,
+            "水使用量": 2600,
+            "廃棄物発生量": 43.1,
+            "女性管理職比率": 28.0,
+            "労働災害件数": 1,
+            "取締役会の多様性": 45.0
+          }
+        ]
         }
       }
 
@@ -168,6 +172,8 @@ export async function POST(request: NextRequest) {
       if (kpisError) {
         return NextResponse.json({ error: 'Failed to fetch KPIs' }, { status: 500 })
       }
+
+      console.log(`Found ${kpis?.length || 0} KPIs:`, kpis?.map(k => `${k.name} (${k.category})`).join(', '))
 
       const mappingSuggestions = []
 

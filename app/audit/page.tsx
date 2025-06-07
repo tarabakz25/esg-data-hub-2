@@ -1,130 +1,38 @@
-"use client"
-
-import { useState } from "react"
+import { Suspense } from "react"
 import { Navigation } from "@/components/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Input } from "@/components/ui/input"
+import { AuditFilters } from "@/components/audit/audit-filters"
+import { AuditTrailsTable } from "@/components/audit/audit-trails-table"
+import { WorkflowTasks } from "@/components/audit/workflow-tasks"
+import { ComplianceChecks } from "@/components/audit/compliance-checks"
+import { getAuditData } from "@/lib/services/audit"
 import { 
   Shield, 
   Clock, 
   CheckCircle, 
-  AlertTriangle, 
-  User,
-  FileText,
-  Search,
-  Filter,
   Download,
-  Eye,
-  Link,
-  Hash,
-  Calendar,
   Activity,
-  UserCheck,
-  AlertCircle,
-  Zap,
-  Lock
+  Hash,
+  Link,
+  Lock,
+  AlertTriangle
 } from "lucide-react"
 
-// Mock data for audit trails
-const mockAuditTrails = [
-  {
-    id: "1",
-    operation: "update",
-    recordType: "KPI",
-    recordId: "kpi_001",
-    actor: "田中太郎",
-    timestamp: "2024-01-15 14:30:25",
-    hash: "a1b2c3d4e5f6...",
-    prevHash: "f6e5d4c3b2a1...",
-    description: "温室効果ガス排出量データの修正",
-    verified: true
-  },
-  {
-    id: "2",
-    operation: "create",
-    recordType: "DataSource",
-    recordId: "ds_005",
-    actor: "佐藤花子",
-    timestamp: "2024-01-15 11:15:10",
-    hash: "b2c3d4e5f6a1...",
-    prevHash: "a1b2c3d4e5f6...",
-    description: "新規データソース「環境部門API」を追加",
-    verified: true
-  },
-  {
-    id: "3",
-    operation: "delete",
-    recordType: "RawRecord",
-    recordId: "raw_123",
-    actor: "山田次郎",
-    timestamp: "2024-01-14 16:45:30",
-    hash: "c3d4e5f6a1b2...",
-    prevHash: "b2c3d4e5f6a1...",
-    description: "重複データレコードを削除",
-    verified: true
-  },
-  {
-    id: "4",
-    operation: "update",
-    recordType: "MappingRule",
-    recordId: "map_007",
-    actor: "システム",
-    timestamp: "2024-01-14 09:20:15",
-    hash: "d4e5f6a1b2c3...",
-    prevHash: "c3d4e5f6a1b2...",
-    description: "AIによるマッピングルール自動更新",
-    verified: false
-  }
-]
-
-const mockWorkflowTasks = [
-  {
-    id: "1",
-    type: "approval",
-    title: "CO2排出量データの承認",
-    description: "2023年度第4四半期のCO2排出量データの承認が必要です",
-    assignee: "環境部長",
-    status: "pending",
-    priority: "high",
-    dueDate: "2024-01-20",
-    createdAt: "2024-01-15"
-  },
-  {
-    id: "2",
-    type: "review",
-    title: "データ品質レビュー",
-    description: "人事データの品質チェックとレビューをお願いします",
-    assignee: "品質管理者",
-    status: "in_progress",
-    priority: "medium",
-    dueDate: "2024-01-18",
-    createdAt: "2024-01-14"
-  },
-  {
-    id: "3",
-    type: "correction",
-    title: "エネルギー使用量修正",
-    description: "単位換算エラーの修正が必要です",
-    assignee: "データアナリスト",
-    status: "completed",
-    priority: "high",
-    dueDate: "2024-01-16",
-    createdAt: "2024-01-13"
-  }
-]
-
-const mockComplianceChecks = [
-  { category: "ISSB S1", status: "compliant", score: 95, lastCheck: "2024-01-15" },
-  { category: "ISSB S2", status: "partial", score: 87, lastCheck: "2024-01-15" },
-  { category: "GRI Standards", status: "compliant", score: 92, lastCheck: "2024-01-14" },
-  { category: "TCFD", status: "non_compliant", score: 65, lastCheck: "2024-01-14" },
-]
+// Helper function to format timestamp
+function formatTimestamp(timestamp: string): string {
+  return new Date(timestamp).toLocaleString('ja-JP', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
 
 const getOperationBadge = (operation: string) => {
   switch (operation) {
@@ -171,10 +79,22 @@ const getPriorityBadge = (priority: string) => {
   }
 }
 
-export default function AuditPage() {
-  const [searchTerm, setSearchTerm] = useState("")
-  const [selectedOperation, setSelectedOperation] = useState("all")
-  const [selectedStatus, setSelectedStatus] = useState("all")
+interface AuditPageProps {
+  searchParams?: Promise<{
+    search?: string
+    operation?: string
+    status?: string
+  }>
+}
+
+export default async function AuditPage({ searchParams }: AuditPageProps) {
+  const params = await searchParams
+  const search = params?.search || ""
+  const operation = params?.operation || "all"
+  const status = params?.status || "all"
+
+  // Fetch audit data
+  const { stats, compliance, blockchain } = await getAuditData()
 
   return (
     <div className="min-h-screen bg-background">
@@ -208,9 +128,9 @@ export default function AuditPage() {
               <Activity className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">1,247</div>
+              <div className="text-2xl font-bold">{stats.total_records.toLocaleString()}</div>
               <p className="text-xs text-muted-foreground">
-                +23 from yesterday
+                ブロックチェーン記録
               </p>
             </CardContent>
           </Card>
@@ -221,9 +141,9 @@ export default function AuditPage() {
               <CheckCircle className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">1,239</div>
+              <div className="text-2xl font-bold">{stats.verified_records.toLocaleString()}</div>
               <p className="text-xs text-muted-foreground">
-                99.4% verified
+                {stats.total_records > 0 ? Math.round((stats.verified_records / stats.total_records) * 100) : 0}% 検証率
               </p>
             </CardContent>
           </Card>
@@ -234,9 +154,9 @@ export default function AuditPage() {
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">5</div>
+              <div className="text-2xl font-bold">{stats.pending_tasks}</div>
               <p className="text-xs text-muted-foreground">
-                2 high priority
+                {stats.high_priority_tasks}件が高優先度
               </p>
             </CardContent>
           </Card>
@@ -247,8 +167,8 @@ export default function AuditPage() {
               <Shield className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">85%</div>
-              <Progress value={85} className="mt-2" />
+              <div className="text-2xl font-bold">{stats.compliance_score}%</div>
+              <Progress value={stats.compliance_score} className="mt-2" />
             </CardContent>
           </Card>
         </div>
@@ -273,82 +193,14 @@ export default function AuditPage() {
                       すべてのデータ変更履歴と操作記録
                     </CardDescription>
                   </div>
-                  <div className="flex gap-2">
-                    <div className="flex items-center space-x-2">
-                      <Search className="h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="記録を検索..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-64"
-                      />
-                    </div>
-                    <Select value={selectedOperation} onValueChange={setSelectedOperation}>
-                      <SelectTrigger className="w-32">
-                        <SelectValue placeholder="操作選択" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">全て</SelectItem>
-                        <SelectItem value="create">作成</SelectItem>
-                        <SelectItem value="update">更新</SelectItem>
-                        <SelectItem value="delete">削除</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <AuditFilters 
+                    defaultSearch={search}
+                    defaultOperation={operation}
+                  />
                 </div>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>操作</TableHead>
-                      <TableHead>対象</TableHead>
-                      <TableHead>実行者</TableHead>
-                      <TableHead>日時</TableHead>
-                      <TableHead>ハッシュ</TableHead>
-                      <TableHead>検証</TableHead>
-                      <TableHead>アクション</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {mockAuditTrails.map((trail) => (
-                      <TableRow key={trail.id}>
-                        <TableCell>{getOperationBadge(trail.operation)}</TableCell>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{trail.recordType}</p>
-                            <p className="text-sm text-muted-foreground">{trail.recordId}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <User className="h-4 w-4" />
-                            <span>{trail.actor}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>{trail.timestamp}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center space-x-2">
-                            <Hash className="h-3 w-3" />
-                            <span className="font-mono text-xs">{trail.hash}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {trail.verified ? (
-                            <CheckCircle className="h-4 w-4 text-green-500" />
-                          ) : (
-                            <AlertCircle className="h-4 w-4 text-yellow-500" />
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Button variant="ghost" size="sm">
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <AuditTrailsTable search={search} operation={operation} />
               </CardContent>
             </Card>
           </TabsContent>
@@ -365,17 +217,9 @@ export default function AuditPage() {
                     </CardDescription>
                   </div>
                   <div className="flex gap-2">
-                    <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                      <SelectTrigger className="w-32">
-                        <SelectValue placeholder="ステータス" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">全て</SelectItem>
-                        <SelectItem value="pending">待機中</SelectItem>
-                        <SelectItem value="in_progress">進行中</SelectItem>
-                        <SelectItem value="completed">完了</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <AuditFilters 
+                      defaultStatus={status}
+                    />
                     <Button size="sm">
                       新規タスク
                     </Button>
@@ -383,37 +227,7 @@ export default function AuditPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {mockWorkflowTasks.map((task) => (
-                    <div key={task.id} className="flex items-center justify-between p-4 border rounded-lg">
-                      <div className="flex items-center space-x-4">
-                        <div className="p-2 bg-primary/10 rounded-lg">
-                          {task.type === "approval" && <UserCheck className="h-5 w-5 text-primary" />}
-                          {task.type === "review" && <Eye className="h-5 w-5 text-primary" />}
-                          {task.type === "correction" && <AlertTriangle className="h-5 w-5 text-primary" />}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <h3 className="font-semibold">{task.title}</h3>
-                            {getPriorityBadge(task.priority)}
-                          </div>
-                          <p className="text-sm text-muted-foreground mb-2">{task.description}</p>
-                          <div className="flex items-center space-x-4 text-xs text-muted-foreground">
-                            <span>担当: {task.assignee}</span>
-                            <span>期限: {task.dueDate}</span>
-                            <span>作成: {task.createdAt}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        {getStatusBadge(task.status)}
-                        <Button variant="ghost" size="sm">
-                          詳細
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <WorkflowTasks status={status} />
               </CardContent>
             </Card>
           </TabsContent>
@@ -429,14 +243,14 @@ export default function AuditPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-6">
-                  {mockComplianceChecks.map((check, index) => (
+                  {compliance.map((check, index) => (
                     <div key={index} className="space-y-2">
                       <div className="flex items-center justify-between">
                         <h3 className="font-semibold">{check.category}</h3>
                         <div className="flex items-center space-x-2">
                           {getStatusBadge(check.status)}
                           <span className="text-sm text-muted-foreground">
-                            最終チェック: {check.lastCheck}
+                            最終チェック: {formatTimestamp(check.lastCheck)}
                           </span>
                         </div>
                       </div>
@@ -495,16 +309,16 @@ export default function AuditPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {mockAuditTrails.slice(0, 3).map((trail, index) => (
-                    <div key={trail.id} className="relative">
+                  {blockchain.blocks.slice(0, 3).map((block, index) => (
+                    <div key={block.id} className="relative">
                       <div className="flex items-start space-x-4 p-4 border rounded-lg">
                         <div className="p-2 bg-primary/10 rounded-lg">
                           <Lock className="h-5 w-5 text-primary" />
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center space-x-2 mb-2">
-                            <h3 className="font-semibold">ブロック #{trail.id}</h3>
-                            {trail.verified ? (
+                            <h3 className="font-semibold">ブロック #{block.id}</h3>
+                            {block.verified ? (
                               <Badge variant="default" className="bg-green-100 text-green-800">検証済み</Badge>
                             ) : (
                               <Badge variant="outline">未検証</Badge>
@@ -513,22 +327,22 @@ export default function AuditPage() {
                           <div className="grid grid-cols-2 gap-4 text-sm">
                             <div>
                               <p className="text-muted-foreground">ハッシュ</p>
-                              <p className="font-mono text-xs">{trail.hash}</p>
+                              <p className="font-mono text-xs">{block.hash}</p>
                             </div>
                             <div>
                               <p className="text-muted-foreground">前ブロックハッシュ</p>
-                              <p className="font-mono text-xs">{trail.prevHash}</p>
+                              <p className="font-mono text-xs">{block.prevHash}</p>
                             </div>
                             <div>
                               <p className="text-muted-foreground">タイムスタンプ</p>
-                              <p>{trail.timestamp}</p>
+                              <p>{formatTimestamp(block.timestamp)}</p>
                             </div>
                             <div>
                               <p className="text-muted-foreground">操作者</p>
-                              <p>{trail.actor}</p>
+                              <p>{block.actor}</p>
                             </div>
                           </div>
-                          <p className="text-sm mt-2">{trail.description}</p>
+                          <p className="text-sm mt-2">{block.description}</p>
                         </div>
                       </div>
                       {index < 2 && (
@@ -549,9 +363,9 @@ export default function AuditPage() {
                     すべてのブロックが正常に連鎖しており、改ざんは検出されていません。
                   </p>
                   <div className="flex items-center space-x-4 text-xs">
-                    <span>最終検証: 2024-01-15 15:30:00</span>
-                    <span>チェーン長: 1,247 ブロック</span>
-                    <span>整合性: 100%</span>
+                    <span>最終検証: {formatTimestamp(blockchain.lastVerified)}</span>
+                    <span>チェーン長: {blockchain.chainLength.toLocaleString()} ブロック</span>
+                    <span>整合性: {blockchain.integrity}%</span>
                   </div>
                 </div>
               </CardContent>

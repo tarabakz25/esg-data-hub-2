@@ -262,7 +262,7 @@ export default function UploadPage() {
     <div className="min-h-screen">
       <Navigation />
       
-      <main className="container mx-auto py-6 space-y-6">
+      <main className="container mx-auto py-6 space-y-6 px-5">
         <div className="flex flex-col space-y-2">
           <h1 className="text-3xl font-bold tracking-tight">データ取込</h1>
           <p className="text-muted-foreground">

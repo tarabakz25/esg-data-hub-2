@@ -547,6 +547,30 @@ export default function DataPage() {
               <RefreshCw className={`h-4 w-4 mr-2 ${statsLoading ? 'animate-spin' : ''}`} />
               同期
             </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={async () => {
+                try {
+                  const response = await fetch('/api/test-data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'create_test_kpis' })
+                  })
+                  if (response.ok) {
+                    alert('テストKPIを作成しました')
+                    await handleRefresh()
+                  } else {
+                    alert('KPI作成に失敗しました')
+                  }
+                } catch (error) {
+                  alert('エラーが発生しました: ' + error)
+                }
+              }}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              テストKPI作成
+            </Button>
           </div>
         </div>
 

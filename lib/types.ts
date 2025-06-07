@@ -114,12 +114,23 @@ export interface MissingKPIAlert {
   urgency: 'low' | 'medium' | 'high';
 }
 
+export interface RecentUpload {
+  id: string;
+  original_filename: string;
+  upload_timestamp: string;
+  processed: boolean;
+  data_sources: {
+    name: string;
+    department: string;
+  }[];
+}
+
 export interface DashboardData {
   total_records: number;
   processed_records: number;
   missing_kpis: number;
   data_quality_score: number;
-  recent_uploads: RawRecord[];
+  recent_uploads: RecentUpload[];
   pending_tasks: WorkflowTask[];
 }
 

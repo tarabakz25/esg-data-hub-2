@@ -11,6 +11,20 @@ export async function GET(request: NextRequest) {
     // Detect missing KPIs
     const missingKPIs = await dataProcessor.detectMissingKPIs(period)
 
+    // Calculate summary statistics
+    const summary = {
+      total_required: await dataProcessor.getTotalRequiredKPIs(),
+      total_missing: missingKPIs.length,
+      by_category: missingKPIs.reduce((acc, kpi) => {
+        acc[kpi.category] = (acc[kpi.category] || 0) + 1
+        return acc
+      }, {} as Record<string, number>),
+      by_urgency: missingKPIs.reduce((acc, kpi) => {
+        acc[kpi.urgency] = (acc[kpi.urgency] || 0) + 1
+        return acc
+      }, {} as Record<string, number>)
+    }
+
     // Send Slack alert if requested
     if (sendAlert && missingKPIs.length > 0) {
       await slackService.sendMissingKPIAlert(missingKPIs, period)
@@ -19,6 +33,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       period,
       missing_kpis: missingKPIs,
+      summary,
       count: missingKPIs.length,
       alert_sent: sendAlert && missingKPIs.length > 0
     })
@@ -46,6 +61,20 @@ export async function POST(request: NextRequest) {
     // Detect missing KPIs and send alert
     const missingKPIs = await dataProcessor.detectMissingKPIs(period)
     
+    // Calculate summary statistics
+    const summary = {
+      total_required: await dataProcessor.getTotalRequiredKPIs(),
+      total_missing: missingKPIs.length,
+      by_category: missingKPIs.reduce((acc, kpi) => {
+        acc[kpi.category] = (acc[kpi.category] || 0) + 1
+        return acc
+      }, {} as Record<string, number>),
+      by_urgency: missingKPIs.reduce((acc, kpi) => {
+        acc[kpi.urgency] = (acc[kpi.urgency] || 0) + 1
+        return acc
+      }, {} as Record<string, number>)
+    }
+    
     if (missingKPIs.length > 0) {
       await slackService.sendMissingKPIAlert(missingKPIs, period)
     }
@@ -54,6 +83,7 @@ export async function POST(request: NextRequest) {
       success: true,
       period,
       missing_kpis: missingKPIs,
+      summary,
       count: missingKPIs.length,
       alert_sent: missingKPIs.length > 0
     })

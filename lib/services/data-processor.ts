@@ -188,24 +188,34 @@ export class DataProcessorService {
     kpis: KPI[]
   ): Promise<{ kpi_id: string; confidence: number } | null> {
     try {
-      // Enhanced AI mapping with multiple strategies
-      const strategies = [
+      // Try rule-based mapping first (no API calls)
+      const ruleBasedResult = await this.ruleBasedMapping(columnName, sampleValues, kpis)
+      if (ruleBasedResult && ruleBasedResult.confidence >= 0.8) {
+        console.log(`Rule-based mapping succeeded for ${columnName} with confidence ${ruleBasedResult.confidence}`)
+        return ruleBasedResult
+      }
+
+      // If rule-based didn't find a good match, try AI strategies
+      const aiStrategies = [
         () => this.semanticSimilarityMapping(columnName, sampleValues, kpis),
-        () => this.ruleBasedMapping(columnName, sampleValues, kpis),
         () => this.embeddingBasedMapping(columnName, sampleValues, kpis)
       ]
 
-      const results = []
+      const results = ruleBasedResult ? [ruleBasedResult] : []
 
-      // Try multiple mapping strategies
-      for (const strategy of strategies) {
+      // Try AI strategies with rate limiting handling
+      for (const strategy of aiStrategies) {
         try {
           const result = await strategy()
           if (result) {
             results.push(result)
           }
         } catch (error) {
-          console.error('Strategy failed:', error)
+          if (error instanceof Error && error.message.includes('Rate limit exceeded')) {
+            console.log(`Rate limit hit for ${columnName}, skipping remaining AI strategies`)
+            break // Skip remaining AI strategies if rate limited
+          }
+          console.error('AI strategy failed:', error)
           // Continue with other strategies
         }
       }
@@ -242,34 +252,34 @@ export class DataProcessorService {
     kpis: KPI[]
   ): Promise<{ kpi_id: string; confidence: number } | null> {
     try {
+      const kpiOptions = kpis.map(k => `ID: ${k.id}, Name: ${k.name}, Category: ${k.category}, Unit: ${k.unit}`).join('\n')
+      
       const request = {
         column_name: columnName,
         sample_values: sampleValues,
-        context: `Available KPIs: ${kpis.map(k => `${k.name} (${k.category})`).join(', ')}`
+        context: `Available KPIs:\n${kpiOptions}`
       }
 
       const response = await openaiService.mapColumnToKPI(request)
       
-      // Find the KPI by name or description match
+      // Validate AI response
       if (!response.kpi_id || typeof response.kpi_id !== 'string') {
-        console.error('Invalid AI response - kpi_id is null or not a string:', response)
+        console.log('AI response has no valid kpi_id:', response)
         return null
       }
 
-      const matchedKPI = kpis.find(kpi => 
-        kpi.name.toLowerCase().includes(response.kpi_id.toLowerCase()) ||
-        response.kpi_id.toLowerCase().includes(kpi.name.toLowerCase()) ||
-        kpi.description?.toLowerCase().includes(response.kpi_id.toLowerCase())
-      )
+      // Check if the returned kpi_id exists in our KPI list
+      const matchedKPI = kpis.find(kpi => kpi.id === response.kpi_id)
 
       if (matchedKPI) {
         return {
           kpi_id: matchedKPI.id,
-          confidence: response.confidence
+          confidence: Math.min(1, Math.max(0, response.confidence || 0))
         }
+      } else {
+        console.log(`AI returned unknown KPI ID: ${response.kpi_id}`)
+        return null
       }
-
-      return null
     } catch (error) {
       console.error('Semantic similarity mapping failed:', error)
       return null
@@ -285,31 +295,45 @@ export class DataProcessorService {
     kpis: KPI[]
   ): Promise<{ kpi_id: string; confidence: number } | null> {
     const patterns = {
-      co2: ['co2', 'carbon', 'emission', 'ghg', 'greenhouse'],
-      energy: ['energy', 'electricity', 'power', 'kwh', 'consumption'],
-      water: ['water', 'h2o', 'consumption', 'usage'],
-      waste: ['waste', 'garbage', 'trash', 'disposal'],
-      employee: ['employee', 'staff', 'worker', 'personnel', 'headcount'],
-      revenue: ['revenue', 'sales', 'income', 'earnings'],
-      diversity: ['diversity', 'gender', 'minority', 'inclusion'],
-      safety: ['safety', 'accident', 'incident', 'injury']
+      ghg_scope1: ['scope1', 'スコープ1', '温室効果ガス', 'scope 1', 'co2', 'carbon', 'emission', 'ghg', 'greenhouse', '排出', '炭素'],
+      ghg_scope2: ['scope2', 'スコープ2', '温室効果ガス', 'scope 2'],
+      water: ['water', 'h2o', 'consumption', 'usage', '水', '使用', '水使用'],
+      waste: ['waste', 'garbage', 'trash', 'disposal', '廃棄', 'ゴミ', '廃棄物', '発生'],
+      employee: ['employee', 'staff', 'worker', 'personnel', 'headcount', '従業員', '社員', '人数', '人'],
+      diversity: ['diversity', 'gender', 'minority', 'inclusion', '多様', '性別', 'ダイバーシティ', '女性', '管理職', '比率'],
+      safety: ['safety', 'accident', 'incident', 'injury', '安全', '事故', '災害', '労働災害', '件数'],
+      governance: ['governance', 'board', 'director', '取締役', '取締役会', 'ガバナンス', '多様性']
     }
 
     const columnLower = columnName.toLowerCase()
     
+    // First try exact name matches
+    for (const kpi of kpis) {
+      const kpiNameLower = kpi.name.toLowerCase()
+      if (kpiNameLower === columnLower || 
+          kpiNameLower.includes(columnLower) || 
+          columnLower.includes(kpiNameLower)) {
+        console.log(`Exact match found: ${columnName} -> ${kpi.name}`)
+        return {
+          kpi_id: kpi.id,
+          confidence: 0.95
+        }
+      }
+    }
+
+    // Then try pattern-based matching
     for (const [category, keywords] of Object.entries(patterns)) {
       if (keywords.some(keyword => columnLower.includes(keyword))) {
         const matchingKPIs = kpis.filter(kpi => 
-          kpi.category.toLowerCase().includes(category) ||
-          kpi.name.toLowerCase().includes(category) ||
-          keywords.some(keyword => kpi.name.toLowerCase().includes(keyword))
+          keywords.some(keyword => kpi.name.toLowerCase().includes(keyword)) ||
+          kpi.category.toLowerCase().includes(category)
         )
 
         if (matchingKPIs.length > 0) {
-          // Return the first matching KPI with high confidence
+          console.log(`Pattern match found: ${columnName} -> ${matchingKPIs[0].name} (category: ${category})`)
           return {
             kpi_id: matchingKPIs[0].id,
-            confidence: 0.8
+            confidence: 0.85
           }
         }
       }
@@ -482,6 +506,7 @@ export class DataProcessorService {
     kpi_name: string
     category: string
     urgency: 'low' | 'medium' | 'high'
+    last_reported?: string
   }>> {
     const supabase = await createServiceClient()
 
@@ -503,15 +528,45 @@ export class DataProcessorService {
 
     const reportedKPIIds = new Set(reportedKPIs?.map((r: any) => r.kpi_id) || [])
 
-    // Find missing KPIs
+    // Get last reported dates for missing KPIs
     const missingKPIs = requiredKPIs.filter((kpi: KPI) => !reportedKPIIds.has(kpi.id))
+    
+    // For each missing KPI, find the last reported date (if any)
+    const missingKPIsWithDates = await Promise.all(
+      missingKPIs.map(async (kpi: KPI) => {
+        const { data: lastReported } = await supabase
+          .from('norm_records')
+          .select('created_at')
+          .eq('kpi_id', kpi.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single()
 
-    return missingKPIs.map((kpi: KPI) => ({
-      kpi_id: kpi.id,
-      kpi_name: kpi.name,
-      category: kpi.category,
-      urgency: this.calculateUrgency(kpi.category)
-    }))
+        return {
+          kpi_id: kpi.id,
+          kpi_name: kpi.name,
+          category: kpi.category,
+          urgency: this.calculateUrgency(kpi.category),
+          last_reported: lastReported?.created_at || undefined
+        }
+      })
+    )
+
+    return missingKPIsWithDates
+  }
+
+  /**
+   * Get total number of required KPIs
+   */
+  async getTotalRequiredKPIs(): Promise<number> {
+    const supabase = await createServiceClient()
+    
+    const { count } = await supabase
+      .from('kpis')
+      .select('*', { count: 'exact', head: true })
+      .eq('required', true)
+
+    return count || 0
   }
 
   /**

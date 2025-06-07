@@ -86,16 +86,20 @@ export class OpenAIService {
             role: 'system',
             content: `You are an ESG data expert. Your task is to map data columns to standardized KPIs based on ISSB (International Sustainability Standards Board) guidelines. 
             
-            Available KPI categories:
-            - Environmental: GHG emissions (Scope 1, 2, 3), energy consumption, water usage, waste generation
-            - Social: employee metrics, diversity, safety, community impact
-            - Governance: board composition, ethics, data security, risk management
+            ESG includes Environmental, Social, AND Governance metrics:
+            - Environmental: emissions, energy, water, waste, etc.
+            - Social: employees, diversity, safety, community impact
+            - Governance: financial performance, revenue, board composition, ethics, risk management
+            
+            IMPORTANT: You must return the exact KPI ID from the provided list, not a name or description.
             
             Respond with a JSON object containing:
-            - kpi_id: the most likely KPI identifier
-            - confidence: confidence score (0-1)
+            - kpi_id: the EXACT KPI ID from the available options (required, or null if no match)
+            - confidence: confidence score (0-1, where 1 is highest confidence)
             - reasoning: brief explanation of the mapping
-            - suggested_unit: recommended unit if different from current`
+            - suggested_unit: recommended unit if different from current
+            
+            Look for semantic matches, synonyms, and related concepts when mapping columns to KPIs.`
           },
           {
             role: 'user',
