@@ -91,7 +91,7 @@ export async function middleware(request: NextRequest) {
   // Protect dashboard routes
   if (request.nextUrl.pathname.startsWith('/dashboard') && !user) {
     const redirectUrl = request.nextUrl.clone()
-    redirectUrl.pathname = '/login'
+    redirectUrl.pathname = '/auth/login'
     redirectUrl.searchParams.set('redirectedFrom', request.nextUrl.pathname)
     return NextResponse.redirect(redirectUrl)
   }

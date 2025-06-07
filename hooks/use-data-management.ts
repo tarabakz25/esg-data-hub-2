@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 interface DataSource {
@@ -29,12 +29,23 @@ interface KPIMapping {
   category: string
 }
 
+interface AutoMapping {
+  column: string
+  kpi_id: string
+  kpi_name: string
+  confidence: number
+  unit: string
+  category: string
+  sample_values: string[]
+  auto_approve: boolean
+}
+
 interface DataStats {
   overview: {
     totalDataSources: number
     processedRecords: number
-    pendingRecords: number
     dataQualityScore: number
+    pendingRecords: number
     newSourcesLastMonth: number
     recordsYesterday: number
   }
@@ -43,13 +54,12 @@ interface DataStats {
     accuracy: number
     consistency: number
     timeliness: number
-    overall: number
   }
   alerts: Array<{
-    type: string
+    type: 'error' | 'warning' | 'info'
     title: string
     description: string
-    severity: string
+    severity: 'low' | 'medium' | 'high'
   }>
 }
 
@@ -96,7 +106,7 @@ export function useDataSources() {
   return { dataSources, loading, error, refetch: fetchDataSources }
 }
 
-export function useRawRecords(search: string = '', source: string = 'all') {
+export function useRawRecords(searchTerm?: string, selectedSource?: string) {
   const [rawRecords, setRawRecords] = useState<RawRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -114,8 +124,8 @@ export function useRawRecords(search: string = '', source: string = 'all') {
       }
 
       const params = new URLSearchParams()
-      if (search) params.set('search', search)
-      if (source !== 'all') params.set('source', source)
+      if (searchTerm) params.append('search', searchTerm)
+      if (selectedSource && selectedSource !== 'all') params.append('source', selectedSource)
 
       const response = await fetch(`/api/data/records?${params.toString()}`, {
         headers: {
@@ -138,9 +148,54 @@ export function useRawRecords(search: string = '', source: string = 'all') {
 
   useEffect(() => {
     fetchRawRecords()
-  }, [search, source])
+  }, [searchTerm, selectedSource])
 
   return { rawRecords, loading, error, refetch: fetchRawRecords }
+}
+
+export function useRawRecordDetail(id?: string) {
+  const [record, setRecord] = useState<any>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchRecord = useCallback(async (recordId: string) => {
+    try {
+      setLoading(true)
+      setError(null)
+      
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        throw new Error('No session found')
+      }
+
+      const response = await fetch(`/api/data/records/${recordId}`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch raw record')
+      }
+
+      const data = await response.json()
+      setRecord(data)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (id) {
+      fetchRecord(id)
+    }
+  }, [id, fetchRecord])
+
+  return { record, loading, error, refetch: fetchRecord }
 }
 
 export function useKPIMappings() {
@@ -213,6 +268,109 @@ export function useKPIMappings() {
   }, [])
 
   return { mappings, loading, error, refetch: fetchMappings, updateMapping }
+}
+
+export function useAutoMapping() {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const generateAutoMappings = useCallback(async (rawData?: Record<string, any>[], rawRecordId?: string): Promise<AutoMapping[]> => {
+    try {
+      setLoading(true)
+      setError(null)
+      
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        throw new Error('No session found')
+      }
+
+      const requestBody: any = {
+        action: 'auto_map'
+      }
+
+      if (rawRecordId) {
+        requestBody.raw_record_id = rawRecordId
+      } else if (rawData) {
+        requestBody.raw_data = rawData
+      } else {
+        throw new Error('Either rawData or rawRecordId must be provided')
+      }
+
+      const response = await fetch('/api/data/mappings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify(requestBody)
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to generate auto mappings')
+      }
+
+      const data = await response.json()
+      return data.mappings || []
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      setError(errorMessage)
+      throw new Error(errorMessage)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const approveMappings = useCallback(async (mappings: AutoMapping[]): Promise<boolean> => {
+    try {
+      setLoading(true)
+      setError(null)
+      
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session) {
+        throw new Error('No session found')
+      }
+
+      const response = await fetch('/api/data/mappings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          action: 'batch_approve',
+          columns: mappings
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to approve mappings')
+      }
+
+      return true
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      setError(errorMessage)
+      throw new Error(errorMessage)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const clearError = useCallback(() => {
+    setError(null)
+  }, [])
+
+  return { 
+    generateAutoMappings, 
+    approveMappings, 
+    loading, 
+    error, 
+    clearError 
+  }
 }
 
 export function useDataStats() {

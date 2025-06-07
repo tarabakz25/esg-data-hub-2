@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useAuth } from "@/hooks/use-auth"
-import { useDataSources, useRawRecords, useKPIMappings, useDataStats } from "@/hooks/use-data-management"
+import { useDataSources, useRawRecords, useKPIMappings, useDataStats, useAutoMapping, useRawRecordDetail } from "@/hooks/use-data-management"
 import { Navigation } from "@/components/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -14,6 +14,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Textarea } from "@/components/ui/textarea"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Checkbox } from "@/components/ui/checkbox"
 import { 
   Database, 
   Upload, 
@@ -27,7 +30,14 @@ import {
   TrendingUp,
   FileText,
   Zap,
-  Loader2
+  Loader2,
+  Wand2,
+  Plus,
+  Eye,
+  ThumbsUp,
+  ThumbsDown,
+  Sparkles,
+  X
 } from "lucide-react"
 
 const getStatusBadge = (status: string) => {
@@ -70,15 +80,35 @@ const getAlertBadge = (severity: string) => {
   }
 }
 
+const getConfidenceBadge = (confidence: number) => {
+  if (confidence >= 0.9) {
+    return <Badge variant="default" className="bg-green-100 text-green-800">確実</Badge>
+  } else if (confidence >= 0.7) {
+    return <Badge variant="secondary">可能性高</Badge>
+  } else if (confidence >= 0.5) {
+    return <Badge variant="outline">可能性中</Badge>
+  } else {
+    return <Badge variant="destructive">可能性低</Badge>
+  }
+}
+
 export default function DataPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedSource, setSelectedSource] = useState("all")
+  const [rawDataInput, setRawDataInput] = useState("")
+  const [autoMappingResults, setAutoMappingResults] = useState<any[]>([])
+  const [selectedMappings, setSelectedMappings] = useState<Set<number>>(new Set())
+  const [isAutoMapDialogOpen, setIsAutoMapDialogOpen] = useState(false)
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
+  const [isRecordMapDialogOpen, setIsRecordMapDialogOpen] = useState(false)
   
   const { user, isLoading: authLoading } = useAuth()
   const { dataSources, loading: sourcesLoading, error: sourcesError, refetch: refetchSources } = useDataSources()
   const { rawRecords, loading: recordsLoading, error: recordsError, refetch: refetchRecords } = useRawRecords(searchTerm, selectedSource)
   const { mappings, loading: mappingsLoading, error: mappingsError, refetch: refetchMappings, updateMapping } = useKPIMappings()
   const { stats, loading: statsLoading, error: statsError, refetch: refetchStats } = useDataStats()
+  const { generateAutoMappings, approveMappings, loading: autoMappingLoading, error: autoMappingError, clearError } = useAutoMapping()
+  const { record: selectedRecord, loading: recordLoading } = useRawRecordDetail(selectedRecordId || undefined)
 
   const handleRefresh = async () => {
     await Promise.all([
@@ -91,6 +121,101 @@ export default function DataPage() {
 
   const handleApproveMapping = async (id: string) => {
     await updateMapping(id, true)
+  }
+
+  const handleAutoMapping = async () => {
+    try {
+      clearError()
+      
+      if (!rawDataInput.trim()) {
+        alert("生データを入力してください")
+        return
+      }
+
+      // Parse JSON input
+      let parsedData
+      try {
+        parsedData = JSON.parse(rawDataInput)
+        if (!Array.isArray(parsedData)) {
+          parsedData = [parsedData]
+        }
+      } catch (e) {
+        alert("有効なJSON形式で入力してください")
+        return
+      }
+
+      const results = await generateAutoMappings(parsedData)
+      setAutoMappingResults(results)
+      setSelectedMappings(new Set(results.map((_, index) => index)))
+    } catch (error) {
+      console.error('Auto mapping failed:', error)
+    }
+  }
+
+  const handleApproveMappings = async () => {
+    try {
+      const selectedResults = autoMappingResults.filter((_, index) => 
+        selectedMappings.has(index)
+      )
+      
+      if (selectedResults.length === 0) {
+        alert("承認するマッピングを選択してください")
+        return
+      }
+
+      await approveMappings(selectedResults)
+      setIsAutoMapDialogOpen(false)
+      setAutoMappingResults([])
+      setRawDataInput("")
+      setSelectedMappings(new Set())
+      
+      // Refresh mappings
+      await refetchMappings()
+      
+      alert(`${selectedResults.length}個のマッピングが承認されました`)
+    } catch (error) {
+      console.error('Approve mappings failed:', error)
+    }
+  }
+
+  const toggleMappingSelection = (index: number) => {
+    const newSelected = new Set(selectedMappings)
+    if (newSelected.has(index)) {
+      newSelected.delete(index)
+    } else {
+      newSelected.add(index)
+    }
+    setSelectedMappings(newSelected)
+  }
+
+  const selectAllMappings = () => {
+    setSelectedMappings(new Set(autoMappingResults.map((_, index) => index)))
+  }
+
+  const deselectAllMappings = () => {
+    setSelectedMappings(new Set())
+  }
+
+  const handleRecordAutoMapping = async (recordId: string) => {
+    try {
+      clearError()
+      setSelectedRecordId(recordId)
+      setIsRecordMapDialogOpen(true)
+      
+      // Generate mapping for the selected record
+      const results = await generateAutoMappings(undefined, recordId)
+      setAutoMappingResults(results)
+      setSelectedMappings(new Set(results.map((_, index) => index)))
+    } catch (error) {
+      console.error('Auto mapping failed:', error)
+    }
+  }
+
+  const handleCloseRecordMapDialog = () => {
+    setIsRecordMapDialogOpen(false)
+    setSelectedRecordId(null)
+    setAutoMappingResults([])
+    setSelectedMappings(new Set())
   }
 
   if (authLoading) {
@@ -136,6 +261,284 @@ export default function DataPage() {
             </p>
           </div>
           <div className="flex gap-2">
+            <Dialog open={isAutoMapDialogOpen} onOpenChange={setIsAutoMapDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700">
+                  <Wand2 className="h-4 w-4 mr-2" />
+                  自動マッピング
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-purple-600" />
+                    手動データ自動KPIマッピング
+                  </DialogTitle>
+                  <DialogDescription>
+                    JSONデータを手動で入力して、AIが自動的にKPIとのマッピングを提案します
+                  </DialogDescription>
+                </DialogHeader>
+                
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="rawData">生データ (JSON形式)</Label>
+                    <Textarea
+                      id="rawData"
+                      placeholder='[{"売上": 1000, "CO2排出量": 50.5, "従業員数": 100}, {"売上": 1200, "CO2排出量": 48.2, "従業員数": 102}]'
+                      value={rawDataInput}
+                      onChange={(e) => setRawDataInput(e.target.value)}
+                      className="min-h-[120px] font-mono text-sm"
+                    />
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <Button
+                      onClick={handleAutoMapping}
+                      disabled={autoMappingLoading || !rawDataInput.trim()}
+                      className="flex items-center gap-2"
+                    >
+                      {autoMappingLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Zap className="h-4 w-4" />
+                      )}
+                      マッピング生成
+                    </Button>
+
+                    {autoMappingResults.length > 0 && (
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={selectAllMappings}>
+                          全選択
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={deselectAllMappings}>
+                          全解除
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  {autoMappingError && (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>{autoMappingError}</AlertDescription>
+                    </Alert>
+                  )}
+
+                  {autoMappingResults.length > 0 && (
+                    <div className="border rounded-lg overflow-hidden">
+                      <div className="bg-muted p-3 border-b">
+                        <h4 className="font-semibold">マッピング提案結果</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {autoMappingResults.length}個のマッピングが提案されました
+                        </p>
+                      </div>
+                      <div className="max-h-[300px] overflow-y-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-12">選択</TableHead>
+                              <TableHead>データ列</TableHead>
+                              <TableHead>提案KPI</TableHead>
+                              <TableHead>信頼度</TableHead>
+                              <TableHead>カテゴリ</TableHead>
+                              <TableHead>単位</TableHead>
+                              <TableHead>サンプル値</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {autoMappingResults.map((mapping, index) => (
+                              <TableRow key={index}>
+                                <TableCell>
+                                  <Checkbox
+                                    checked={selectedMappings.has(index)}
+                                    onCheckedChange={() => toggleMappingSelection(index)}
+                                  />
+                                </TableCell>
+                                <TableCell className="font-mono text-sm">{mapping.column}</TableCell>
+                                <TableCell>{mapping.kpi_name}</TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    {getConfidenceBadge(mapping.confidence)}
+                                    <span className="text-sm">{Math.round(mapping.confidence * 100)}%</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant="outline">{mapping.category}</Badge>
+                                </TableCell>
+                                <TableCell>{mapping.unit}</TableCell>
+                                <TableCell className="text-sm text-muted-foreground">
+                                  {mapping.sample_values.join(', ')}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setIsAutoMapDialogOpen(false)
+                      setAutoMappingResults([])
+                      setRawDataInput("")
+                      setSelectedMappings(new Set())
+                    }}
+                  >
+                    キャンセル
+                  </Button>
+                  <Button
+                    onClick={handleApproveMappings}
+                    disabled={autoMappingLoading || selectedMappings.size === 0}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    {autoMappingLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <ThumbsUp className="h-4 w-4 mr-2" />
+                    )}
+                    選択したマッピングを承認
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            {/* Raw Record Auto Mapping Dialog */}
+            <Dialog open={isRecordMapDialogOpen} onOpenChange={setIsRecordMapDialogOpen}>
+              <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-purple-600" />
+                    ファイル自動KPIマッピング
+                  </DialogTitle>
+                  <DialogDescription>
+                    {selectedRecord && (
+                      <>
+                        ファイル: <span className="font-mono text-sm">{selectedRecord.filename}</span> 
+                        ({selectedRecord.records.toLocaleString()}レコード)
+                      </>
+                    )}
+                  </DialogDescription>
+                </DialogHeader>
+                
+                <div className="space-y-4">
+                  {recordLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                      データを読み込み中...
+                    </div>
+                  ) : autoMappingLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                      AIマッピングを生成中...
+                    </div>
+                  ) : (
+                    <>
+                      {autoMappingError && (
+                        <Alert variant="destructive">
+                          <AlertCircle className="h-4 w-4" />
+                          <AlertDescription>{autoMappingError}</AlertDescription>
+                        </Alert>
+                      )}
+
+                      {autoMappingResults.length > 0 && (
+                        <>
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <h4 className="font-semibold">マッピング提案結果</h4>
+                              <p className="text-sm text-muted-foreground">
+                                {autoMappingResults.length}個のマッピングが提案されました
+                              </p>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button variant="outline" size="sm" onClick={selectAllMappings}>
+                                全選択
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={deselectAllMappings}>
+                                全解除
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="border rounded-lg overflow-hidden">
+                            <div className="max-h-[400px] overflow-y-auto">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead className="w-12">選択</TableHead>
+                                    <TableHead>データ列</TableHead>
+                                    <TableHead>提案KPI</TableHead>
+                                    <TableHead>信頼度</TableHead>
+                                    <TableHead>カテゴリ</TableHead>
+                                    <TableHead>単位</TableHead>
+                                    <TableHead>サンプル値</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {autoMappingResults.map((mapping, index) => (
+                                    <TableRow key={index}>
+                                      <TableCell>
+                                        <Checkbox
+                                          checked={selectedMappings.has(index)}
+                                          onCheckedChange={() => toggleMappingSelection(index)}
+                                        />
+                                      </TableCell>
+                                      <TableCell className="font-mono text-sm">{mapping.column}</TableCell>
+                                      <TableCell>{mapping.kpi_name}</TableCell>
+                                      <TableCell>
+                                        <div className="flex items-center gap-2">
+                                          {getConfidenceBadge(mapping.confidence)}
+                                          <span className="text-sm">{Math.round(mapping.confidence * 100)}%</span>
+                                        </div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge variant="outline">{mapping.category}</Badge>
+                                      </TableCell>
+                                      <TableCell>{mapping.unit}</TableCell>
+                                      <TableCell className="text-sm text-muted-foreground">
+                                        {mapping.sample_values.join(', ')}
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={handleCloseRecordMapDialog}
+                  >
+                    キャンセル
+                  </Button>
+                  <Button
+                    onClick={async () => {
+                      await handleApproveMappings()
+                      handleCloseRecordMapDialog()
+                    }}
+                    disabled={autoMappingLoading || selectedMappings.size === 0}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    {autoMappingLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <ThumbsUp className="h-4 w-4 mr-2" />
+                    )}
+                    選択したマッピングを承認
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
             <Button variant="outline" size="sm">
               <Download className="h-4 w-4 mr-2" />
               エクスポート
@@ -364,9 +767,22 @@ export default function DataPage() {
                             <TableCell>{getStatusBadge(record.status)}</TableCell>
                             <TableCell>{record.uploadTime}</TableCell>
                             <TableCell>
-                              <Button variant="ghost" size="sm">
-                                詳細
-                              </Button>
+                              <div className="flex gap-1">
+                                <Button variant="ghost" size="sm">
+                                  <Eye className="h-4 w-4 mr-1" />
+                                  詳細
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  onClick={() => handleRecordAutoMapping(record.id)}
+                                  disabled={autoMappingLoading || record.status === 'error'}
+                                  className="text-purple-600 hover:text-purple-700 hover:bg-purple-50"
+                                >
+                                  <Wand2 className="h-4 w-4 mr-1" />
+                                  マッピング
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))
@@ -382,10 +798,21 @@ export default function DataPage() {
           <TabsContent value="mapping" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>KPIマッピング</CardTitle>
-                <CardDescription>
-                  データ列とKPIの自動マッピング結果
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>KPIマッピング</CardTitle>
+                    <CardDescription>
+                      データ列とKPIの自動マッピング結果
+                    </CardDescription>
+                  </div>
+                  <Button 
+                    onClick={() => setIsAutoMapDialogOpen(true)}
+                    className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    新規マッピング
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {mappingsLoading ? (

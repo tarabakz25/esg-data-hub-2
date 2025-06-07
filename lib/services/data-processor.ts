@@ -180,9 +180,148 @@ export class DataProcessorService {
   }
 
   /**
-   * Generate AI-powered column mapping
+   * Generate AI-powered column mapping (now public for external use)
    */
-  private async generateColumnMapping(
+  async generateColumnMapping(
+    columnName: string, 
+    sampleValues: string[], 
+    kpis: KPI[]
+  ): Promise<{ kpi_id: string; confidence: number } | null> {
+    try {
+      // Enhanced AI mapping with multiple strategies
+      const strategies = [
+        () => this.semanticSimilarityMapping(columnName, sampleValues, kpis),
+        () => this.ruleBasedMapping(columnName, sampleValues, kpis),
+        () => this.embeddingBasedMapping(columnName, sampleValues, kpis)
+      ]
+
+      const results = []
+
+      // Try multiple mapping strategies
+      for (const strategy of strategies) {
+        try {
+          const result = await strategy()
+          if (result) {
+            results.push(result)
+          }
+        } catch (error) {
+          console.error('Strategy failed:', error)
+          // Continue with other strategies
+        }
+      }
+
+      if (results.length === 0) {
+        return null
+      }
+
+      // Calculate weighted average confidence
+      const bestResult = results.reduce((best, current) => 
+        current.confidence > best.confidence ? current : best
+      )
+
+      // Boost confidence if multiple strategies agree
+      if (results.length > 1) {
+        const agreementBonus = results.filter(r => r.kpi_id === bestResult.kpi_id).length * 0.1
+        bestResult.confidence = Math.min(1.0, bestResult.confidence + agreementBonus)
+      }
+
+      return bestResult
+
+    } catch (error) {
+      console.error('Error generating column mapping:', error)
+      return null
+    }
+  }
+
+  /**
+   * Semantic similarity mapping using OpenAI
+   */
+  private async semanticSimilarityMapping(
+    columnName: string,
+    sampleValues: string[],
+    kpis: KPI[]
+  ): Promise<{ kpi_id: string; confidence: number } | null> {
+    try {
+      const request = {
+        column_name: columnName,
+        sample_values: sampleValues,
+        context: `Available KPIs: ${kpis.map(k => `${k.name} (${k.category})`).join(', ')}`
+      }
+
+      const response = await openaiService.mapColumnToKPI(request)
+      
+      // Find the KPI by name or description match
+      if (!response.kpi_id || typeof response.kpi_id !== 'string') {
+        console.error('Invalid AI response - kpi_id is null or not a string:', response)
+        return null
+      }
+
+      const matchedKPI = kpis.find(kpi => 
+        kpi.name.toLowerCase().includes(response.kpi_id.toLowerCase()) ||
+        response.kpi_id.toLowerCase().includes(kpi.name.toLowerCase()) ||
+        kpi.description?.toLowerCase().includes(response.kpi_id.toLowerCase())
+      )
+
+      if (matchedKPI) {
+        return {
+          kpi_id: matchedKPI.id,
+          confidence: response.confidence
+        }
+      }
+
+      return null
+    } catch (error) {
+      console.error('Semantic similarity mapping failed:', error)
+      return null
+    }
+  }
+
+  /**
+   * Rule-based mapping using predefined patterns
+   */
+  private async ruleBasedMapping(
+    columnName: string,
+    sampleValues: string[],
+    kpis: KPI[]
+  ): Promise<{ kpi_id: string; confidence: number } | null> {
+    const patterns = {
+      co2: ['co2', 'carbon', 'emission', 'ghg', 'greenhouse'],
+      energy: ['energy', 'electricity', 'power', 'kwh', 'consumption'],
+      water: ['water', 'h2o', 'consumption', 'usage'],
+      waste: ['waste', 'garbage', 'trash', 'disposal'],
+      employee: ['employee', 'staff', 'worker', 'personnel', 'headcount'],
+      revenue: ['revenue', 'sales', 'income', 'earnings'],
+      diversity: ['diversity', 'gender', 'minority', 'inclusion'],
+      safety: ['safety', 'accident', 'incident', 'injury']
+    }
+
+    const columnLower = columnName.toLowerCase()
+    
+    for (const [category, keywords] of Object.entries(patterns)) {
+      if (keywords.some(keyword => columnLower.includes(keyword))) {
+        const matchingKPIs = kpis.filter(kpi => 
+          kpi.category.toLowerCase().includes(category) ||
+          kpi.name.toLowerCase().includes(category) ||
+          keywords.some(keyword => kpi.name.toLowerCase().includes(keyword))
+        )
+
+        if (matchingKPIs.length > 0) {
+          // Return the first matching KPI with high confidence
+          return {
+            kpi_id: matchingKPIs[0].id,
+            confidence: 0.8
+          }
+        }
+      }
+    }
+
+    return null
+  }
+
+  /**
+   * Embedding-based mapping using vector similarity
+   */
+  private async embeddingBasedMapping(
     columnName: string, 
     sampleValues: string[], 
     kpis: KPI[]
@@ -222,7 +361,7 @@ export class DataProcessorService {
         confidence: bestMatch.similarity
       }
     } catch (error) {
-      console.error('Error generating column mapping:', error)
+      console.error('Error in embedding-based mapping:', error)
       return null
     }
   }

@@ -1,13 +1,6 @@
-"use client"
-
-import { useEffect, useState } from "react"
 import Link from "next/link"
-import { Navigation } from "@/components/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { 
   BarChart3, 
   Upload, 
@@ -19,12 +12,24 @@ import {
   Clock,
   Shield
 } from "lucide-react"
-import { DashboardData } from "@/lib/types"
 
 export default function HomePage() {
   return (
     <div className="min-h-screen">
-      <Navigation />
+      {/* Simple header without auth dependencies */}
+      <header className="border-b bg-background/95 backdrop-blur">
+        <div className="container flex h-16 items-center">
+          <Link href="/" className="flex items-center space-x-2">
+            <BarChart3 className="h-6 w-6 text-primary" />
+            <span className="font-bold">ESG Data Hub</span>
+          </Link>
+          <div className="ml-auto">
+            <Button asChild>
+              <Link href="/auth/login">ログイン</Link>
+            </Button>
+          </div>
+        </div>
+      </header>
       
       <main className="container mx-auto py-12 space-y-12">
         {/* Hero Section */}
